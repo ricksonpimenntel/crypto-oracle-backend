@@ -4,22 +4,26 @@ import os
 import requests
 from dotenv import load_dotenv
 
-# 1) Carrega sua chave do arquivo .env
+# Load .env variables (API key will be loaded from .env)
 load_dotenv()
-API_KEY = os.getenv("CMC_API_KEY")
+API_KEY = os.getenv("CMC_API_KEY")  # You named it CMC_API_KEY in your .env
 
-# 2) URL base da CoinMarketCap
+# Base URL for CoinMarketCap API
 BASE_URL = "https://pro-api.coinmarketcap.com/v1/cryptocurrency/quotes/latest"
 
 def get_coin_price(coin_pair: str) -> float:
     """
-    Recebe coin_pair no formato 'BTC/USDT'
-    Retorna o preço atual como float.
+    Receives coin_pair in the format 'BTC/USDT'
+    Returns the current price as float.
     """
-    # separa 'BTC' e 'USDT'
-    symbol, convert = coin_pair.split("/")
+    if not API_KEY:
+        raise ValueError("CMC_API_KEY not found in environment variables!")
 
-    # parâmetros e cabeçalhos da requisição
+    try:
+        symbol, convert = coin_pair.split("/")
+    except Exception:
+        raise ValueError("coin_pair must be in format 'BTC/USDT'")
+
     params = {
         "symbol": symbol,
         "convert": convert
@@ -29,11 +33,13 @@ def get_coin_price(coin_pair: str) -> float:
         "X-CMC_PRO_API_KEY": API_KEY
     }
 
-    # faz a chamada HTTP
     response = requests.get(BASE_URL, params=params, headers=headers)
-    response.raise_for_status()  # levanta erro se status != 200
+    response.raise_for_status()
     data = response.json().get("data", {})
 
-    # extrai o preço da moeda convertida
+    # Defensive check for missing data
+    if symbol not in data or convert not in data[symbol]["quote"]:
+        raise ValueError(f"Could not retrieve price for {coin_pair}.")
+
     price = data[symbol]["quote"][convert]["price"]
     return float(price)
