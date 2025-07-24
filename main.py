@@ -4,6 +4,7 @@ from coinmarketcap_api import get_coin_price  # Mantém para predict/scan
 import requests
 import pandas as pd
 import pandas_ta as ta
+from werkzeug.exceptions import BadRequest
 
 app = Flask(__name__)
 CORS(app)
@@ -16,6 +17,14 @@ def make_response(success, data=None, error=None):
         "error": error
     }
 
+# Handler global para JSON inválido/malformado
+@app.errorhandler(BadRequest)
+def handle_bad_request(e):
+    return jsonify(make_response(
+        False,
+        error={"type": "BadRequest", "message": "Invalid or malformed JSON payload."}
+    )), 400
+
 SUPPORTED_COINS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'ADA/USDT', 'XRP/USDT']
 
 @app.route('/')
@@ -24,13 +33,13 @@ def home():
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    data = request.get_json()
-    coin = data.get('coin')
-    if not coin:
+    data = request.get_json(silent=True)
+    if not data or 'coin' not in data:
         return jsonify(make_response(
             False, 
-            error={"type": "MissingField", "message": "Coin symbol is required."}
+            error={"type": "MissingField", "message": "Field 'coin' is required."}
         )), 400
+    coin = data.get('coin')
     if coin.upper() not in [c.replace('/', '') for c in SUPPORTED_COINS] and coin.upper() not in SUPPORTED_COINS:
         return jsonify(make_response(
             False, 
@@ -69,7 +78,12 @@ def scan():
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
-    data = request.get_json()
+    data = request.get_json(silent=True)
+    if not data or 'symbol' not in data:
+        return jsonify(make_response(
+            False,
+            error={"type": "MissingField", "message": "Field 'symbol' is required."}
+        )), 400
     symbol = data.get('symbol', 'BTCUSDT').replace('/', '').upper()  # Binance não usa barra
     interval = data.get('interval', '1h')
     limit = int(data.get('limit', 100))
@@ -91,6 +105,8 @@ def analyze():
         resp = requests.get(url, params=params)
         resp.raise_for_status()
         klines = resp.json()
+        if not isinstance(klines, list):
+            raise ValueError("Invalid response from Binance API.")
     except Exception as e:
         return jsonify(make_response(
             False, 
