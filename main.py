@@ -24,5 +24,23 @@ def predict():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
+@app.route('/scan', methods=['GET'])
+def scan():
+    coins = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'ADA/USDT', 'XRP/USDT']
+    results = []
+    for coin in coins:
+        try:
+            price = get_coin_price(coin)
+            results.append({
+                'symbol': coin,
+                'current_price': price
+            })
+        except Exception as e:
+            results.append({
+                'symbol': coin,
+                'error': str(e)
+            })
+    return jsonify(results)
+
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
