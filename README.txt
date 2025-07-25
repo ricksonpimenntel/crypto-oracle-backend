@@ -1,6 +1,6 @@
 # 🧠 Crypto Oracle AI - Backend
 
-Flask backend for real-time crypto price prediction, scan and candle analysis.
+Flask backend for real-time crypto price prediction, scan, and candle analysis.
 
 ---
 
@@ -8,7 +8,6 @@ Flask backend for real-time crypto price prediction, scan and candle analysis.
 
 ### 1. Clone this repo
 
-### 2. Install Python dependencies
-
 ```bash
-pip install -r requirements.txt
+git clone https://github.com/your-username/crypto-oracle-backend.git
+cd crypto-oracle-backend
