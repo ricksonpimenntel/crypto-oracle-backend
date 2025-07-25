@@ -1,3 +1,8 @@
+import os
+from dotenv import load_dotenv  # <<---- ADD THESE TWO LINES
+
+load_dotenv()  # <<---- LOAD .env VARIABLES
+
 from flask import Flask, request, jsonify
 from flask_cors import CORS
 from coinmarketcap_api import get_coin_price  # Mantém para predict/scan
