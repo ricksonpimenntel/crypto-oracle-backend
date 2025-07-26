@@ -1,11 +1,11 @@
 import os
-from dotenv import load_dotenv  # <<---- ADD THESE TWO LINES
+from dotenv import load_dotenv
 
-load_dotenv()  # <<---- LOAD .env VARIABLES
+load_dotenv()
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from coingecko_api import get_coin_price  # Mantém para predict/scan
+from pycoingecko import CoinGeckoAPI  # <-- CORRECT IMPORT
 import requests
 import pandas as pd
 import pandas_ta as ta
@@ -14,7 +14,27 @@ from werkzeug.exceptions import BadRequest
 app = Flask(__name__)
 CORS(app)
 
-# Helper universal de resposta padronizada
+# Supported coins mapping (API expects IDs like 'bitcoin', not 'BTC/USDT')
+SYMBOL_TO_ID = {
+    'BTC/USDT': 'bitcoin',
+    'ETH/USDT': 'ethereum',
+    'SOL/USDT': 'solana',
+    'ADA/USDT': 'cardano',
+    'XRP/USDT': 'ripple',
+    'BTCUSDT': 'bitcoin',
+    'ETHUSDT': 'ethereum',
+    'SOLUSDT': 'solana',
+    'ADAUSDT': 'cardano',
+    'XRPUSDT': 'ripple',
+    'BTC': 'bitcoin',
+    'ETH': 'ethereum',
+    'SOL': 'solana',
+    'ADA': 'cardano',
+    'XRP': 'ripple',
+}
+
+SUPPORTED_COINS = list(SYMBOL_TO_ID.keys())
+
 def make_response(success, data=None, error=None):
     return {
         "success": success,
@@ -22,7 +42,6 @@ def make_response(success, data=None, error=None):
         "error": error
     }
 
-# Handler global para JSON inválido/malformado
 @app.errorhandler(BadRequest)
 def handle_bad_request(e):
     return jsonify(make_response(
@@ -30,7 +49,14 @@ def handle_bad_request(e):
         error={"type": "BadRequest", "message": "Invalid or malformed JSON payload."}
     )), 400
 
-SUPPORTED_COINS = ['BTC/USDT', 'ETH/USDT', 'SOL/USDT', 'ADA/USDT', 'XRP/USDT']
+def get_coin_price(symbol, vs_currency='usd'):
+    # Map symbol to CoinGecko ID
+    coin_id = SYMBOL_TO_ID.get(symbol.upper())
+    if not coin_id:
+        raise ValueError(f"Coin '{symbol}' not supported or not mapped to CoinGecko ID.")
+    cg = CoinGeckoAPI()
+    data = cg.get_price(ids=coin_id, vs_currencies=vs_currency)
+    return data.get(coin_id, {}).get(vs_currency)
 
 @app.route('/')
 def home():
@@ -45,6 +71,7 @@ def predict():
             error={"type": "MissingField", "message": "Field 'coin' is required."}
         )), 400
     coin = data.get('coin')
+    # Accept coin in any of the supported formats
     if coin.upper() not in [c.replace('/', '') for c in SUPPORTED_COINS] and coin.upper() not in SUPPORTED_COINS:
         return jsonify(make_response(
             False, 
@@ -65,7 +92,7 @@ def predict():
 @app.route('/scan', methods=['GET'])
 def scan():
     results = []
-    for coin in SUPPORTED_COINS:
+    for coin in SUPPORTED_COINS[:5]:  # Only first 5 unique coins (for now)
         try:
             price = get_coin_price(coin)
             results.append({
@@ -89,7 +116,7 @@ def analyze():
             False,
             error={"type": "MissingField", "message": "Field 'symbol' is required."}
         )), 400
-    symbol = data.get('symbol', 'BTCUSDT').replace('/', '').upper()  # Binance não usa barra
+    symbol = data.get('symbol', 'BTCUSDT').replace('/', '').upper()
     interval = data.get('interval', '1h')
     limit = int(data.get('limit', 100))
 
