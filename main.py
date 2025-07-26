@@ -5,7 +5,7 @@ load_dotenv()  # <<---- LOAD .env VARIABLES
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from coinmarketcap_api import get_coin_price  # Mantém para predict/scan
+from coingecko_api import get_coin_price  # Mantém para predict/scan
 import requests
 import pandas as pd
 import pandas_ta as ta
