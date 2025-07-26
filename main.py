@@ -5,8 +5,7 @@ load_dotenv()
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from pycoingecko import CoinGeckoAPI  # <-- CORRECT IMPORT
-import requests
+from pycoingecko import CoinGeckoAPI
 import pandas as pd
 import pandas_ta as ta
 from werkzeug.exceptions import BadRequest
@@ -108,6 +107,7 @@ def scan():
             })
     return jsonify(make_response(True, data={"prices": results}))
 
+# --- NOVO ENDPOINT /analyze USANDO COINGECKO ---
 @app.route('/analyze', methods=['POST'])
 def analyze():
     data = request.get_json(silent=True)
@@ -117,45 +117,49 @@ def analyze():
             error={"type": "MissingField", "message": "Field 'symbol' is required."}
         )), 400
     symbol = data.get('symbol', 'BTCUSDT').replace('/', '').upper()
-    interval = data.get('interval', '1h')
-    limit = int(data.get('limit', 100))
+    interval = data.get('interval', '1d')  # CoinGecko só aceita daily!
+    limit = int(data.get('limit', 50))
 
-    valid_intervals = ['1m','3m','5m','15m','30m','1h','2h','4h','6h','8h','12h','1d']
-    if interval not in valid_intervals:
+    # Map symbol to CoinGecko ID
+    coingecko_symbol_map = {
+        'BTCUSDT': 'bitcoin',
+        'ETHUSDT': 'ethereum',
+        'SOLUSDT': 'solana',
+        'ADAUSDT': 'cardano',
+        'XRPUSDT': 'ripple'
+    }
+    coin_id = coingecko_symbol_map.get(symbol)
+    if not coin_id:
         return jsonify(make_response(
-            False, 
-            error={"type": "InvalidInterval", "message": "Invalid interval"}
+            False,
+            error={"type": "InvalidSymbol", "message": f"Symbol '{symbol}' not supported for analyze."}
         )), 400
 
-    url = f"https://api.binance.com/api/v3/klines"
-    params = {
-        "symbol": symbol,
-        "interval": interval,
-        "limit": limit
+    # Map interval to days (CoinGecko supports: 1, 7, 14, 30, 90, 180, 365, max)
+    interval_map = {
+        "1d": 1,
+        "7d": 7,
+        "14d": 14,
+        "30d": 30,
+        "90d": 90,
+        "180d": 180,
+        "365d": 365,
+        "max": "max"
     }
-    try:
-        resp = requests.get(url, params=params)
-        resp.raise_for_status()
-        klines = resp.json()
-        if not isinstance(klines, list):
-            raise ValueError("Invalid response from Binance API.")
-    except Exception as e:
-        return jsonify(make_response(
-            False, 
-            error={"type": "ExternalAPIError", "message": f"Error fetching candles: {str(e)}"}
-        )), 500
+    days = interval_map.get(interval, 1)  # Default to 1 day
 
-    columns = ['timestamp','open','high','low','close','volume','close_time','qav','trades','taker_base_vol','taker_quote_vol','ignore']
     try:
-        df = pd.DataFrame(klines, columns=columns)
-        df['open'] = df['open'].astype(float)
-        df['high'] = df['high'].astype(float)
-        df['low'] = df['low'].astype(float)
-        df['close'] = df['close'].astype(float)
-        df['volume'] = df['volume'].astype(float)
-        df['timestamp'] = df['timestamp'] // 1000  # ms para segundos
+        cg = CoinGeckoAPI()
+        ohlc = cg.get_coin_ohlc_by_id(id=coin_id, vs_currency='usd', days=days)
+        if not ohlc:
+            raise ValueError("No OHLC data found")
+        columns = ['timestamp', 'open', 'high', 'low', 'close']
+        df = pd.DataFrame(ohlc, columns=columns)
+        df['timestamp'] = df['timestamp'] // 1000  # ms to seconds
 
-        last = min(50, len(df))  # Garante não dar erro se houver poucos candles
+        # Limit the number of candles
+        df = df.tail(min(limit, len(df)))
+
         rsi = ta.rsi(df['close'], length=14).fillna(0).round(2).tolist()
         macd_all = ta.macd(df['close'])
         macd = macd_all['MACD_12_26_9'].fillna(0).round(4).tolist()
@@ -165,22 +169,20 @@ def analyze():
         result = {
             "symbol": symbol,
             "interval": interval,
-            "candles": df[['timestamp','open','high','low','close','volume']].tail(last).to_dict(orient='records'),
+            "candles": df[['timestamp','open','high','low','close']].to_dict(orient='records'),
             "indicators": {
-                "rsi": rsi[-last:],
-                "macd": macd[-last:],
-                "macd_signal": macd_signal[-last:],
-                "macd_hist": macd_hist[-last:]
+                "rsi": rsi[-len(df):],
+                "macd": macd[-len(df):],
+                "macd_signal": macd_signal[-len(df):],
+                "macd_hist": macd_hist[-len(df):]
             }
         }
         return jsonify(make_response(True, data=result))
     except Exception as e:
         return jsonify(make_response(
-            False, 
+            False,
             error={"type": "ProcessingError", "message": f"Error processing data: {str(e)}"}
         )), 500
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=5000, debug=True)
-# Teste para forçar alteração
-"# MUDANCA RADICAL" 
